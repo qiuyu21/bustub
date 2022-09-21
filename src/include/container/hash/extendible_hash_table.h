@@ -22,6 +22,8 @@
 #include <mutex>  // NOLINT
 #include <utility>
 #include <vector>
+#include <map>
+#include <cmath>
 
 #include "container/hash/hash_table.h"
 
@@ -62,6 +64,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @return The number of buckets in the directory.
    */
   auto GetNumBuckets() const -> int;
+
+  auto GetNumDir() const -> int { return std::pow(2, global_depth_); }
 
   /**
    *
@@ -164,6 +168,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
     std::list<std::pair<K, V>> list_;
   };
 
+  auto GetBucket(const K &key) -> std::shared_ptr<Bucket> &;
+
  private:
   // TODO(student): You may add additional private members and helper functions and remove the ones
   // you don't need.
@@ -172,10 +178,13 @@ class ExtendibleHashTable : public HashTable<K, V> {
   size_t bucket_size_;  // The size of a bucket
   int num_buckets_;     // The number of buckets in the hash table
   mutable std::mutex latch_;
-  std::vector<std::shared_ptr<Bucket>> dir_;  // The directory of the hash table
+  // std::vector<std::shared_ptr<Bucket>> dir_;  The directory of the hash table
+  
+  int num_dirs_;
+  std::map<int,std::shared_ptr<Bucket>> dirToBucket_;
 
   // The following functions are completely optional, you can delete them if you have your own ideas.
-
+  
   /**
    * @brief Redistribute the kv pairs in a full bucket.
    * @param bucket The bucket to be redistributed.
@@ -192,6 +201,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @return The entry index in the directory.
    */
   auto IndexOf(const K &key) -> size_t;
+
+  inline void IncrementGlobalDepth() { global_depth_++; }
 
   auto GetGlobalDepthInternal() const -> int;
   auto GetLocalDepthInternal(int dir_index) const -> int;
