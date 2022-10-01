@@ -164,7 +164,7 @@ auto ExtendibleHashTable<K, V>::Bucket::Find(const K &key, V &value) -> bool {
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::Remove(const K &key) -> bool {
-  auto item_list = GetItems();
+  auto &item_list = GetItems();
   for (auto it = item_list.begin(); it != item_list.end(); it++) {
     if (it->first == key) {
       item_list.erase(it);

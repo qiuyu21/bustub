@@ -36,7 +36,7 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
-    BUSTUB_ASSERT(frame_id >= 1 && size_t(frame_id) <= replacer_size_, "frame id out of range");
+    BUSTUB_ASSERT(frame_id >= 0 && size_t(frame_id) <= replacer_size_, "frame id out of range");
     latch_.lock();
     current_timestamp_++;
 
@@ -52,7 +52,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
-    BUSTUB_ASSERT(frame_id >= 1 && size_t(frame_id) <= replacer_size_, "frame id out of range.");
+    BUSTUB_ASSERT(frame_id >= 0 && size_t(frame_id) <= replacer_size_, "frame id out of range.");
     latch_.lock();
 
     auto f_ptr = frames_.at(frame_id);
@@ -76,7 +76,7 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) {
-    BUSTUB_ASSERT(frame_id >= 1 && size_t(frame_id) <= replacer_size_, "frame id out of range.");
+    BUSTUB_ASSERT(frame_id >= 0 && size_t(frame_id) <= replacer_size_, "frame id out of range.");
     latch_.lock();
 
     auto f_ptr = frames_.at(frame_id);

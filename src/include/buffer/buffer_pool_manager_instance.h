@@ -169,6 +169,11 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   auto AllocatePage() -> page_id_t;
 
   /**
+   * @brief Find an available frame. Caller should acquire the latch before calling this function.
+   * @return the id of the frame
+   */
+
+  /**
    * @brief Deallocate a page on disk. Caller should acquire the latch before calling this function.
    * @param page_id id of the page to deallocate
    */
