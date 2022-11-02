@@ -82,6 +82,10 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
+  auto GetLeafPage(const KeyType &key) -> Page *;
+  
+  void UpdateParent(const page_id_t pid, const page_id_t p_pid);
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -89,6 +93,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  int size_;
 };
 
 }  // namespace bustub

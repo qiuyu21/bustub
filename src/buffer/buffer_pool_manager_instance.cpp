@@ -87,6 +87,8 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
   auto found = page_table_->Find(page_id, frame_id);
   
   if (found) {
+    replacer_->RecordAccess(frame_id);
+    replacer_->SetEvictable(frame_id, false);
     latch_.unlock();
     return &pages_[frame_id];
   }
@@ -145,7 +147,7 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
     replacer_->SetEvictable(frame_id, true);
   }
 
-  pages_[frame_id].is_dirty_ = is_dirty;
+  pages_[frame_id].is_dirty_ |= is_dirty;
 
   latch_.unlock();
   return true;
@@ -205,7 +207,7 @@ auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
   return true;
 }
 
-auto BufferPoolManagerInstance::AllocatePage() -> page_id_t { 
+auto BufferPoolManagerInstance::AllocatePage() -> page_id_t {
   return next_page_id_++;
 }
 
