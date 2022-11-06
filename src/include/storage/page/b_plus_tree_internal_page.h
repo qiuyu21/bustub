@@ -17,7 +17,7 @@
 namespace bustub {
 
 #define B_PLUS_TREE_INTERNAL_PAGE_TYPE BPlusTreeInternalPage<KeyType, ValueType, KeyComparator>
-#define INTERNAL_PAGE_HEADER_SIZE 24
+#define INTERNAL_PAGE_HEADER_SIZE 28
 #define INTERNAL_PAGE_SIZE ((BUSTUB_PAGE_SIZE - INTERNAL_PAGE_HEADER_SIZE) / (sizeof(MappingType)))
 /**
  * Store n indexed keys and n+1 child pointers (page_id) within internal page.
@@ -31,6 +31,14 @@ namespace bustub {
  *  --------------------------------------------------------------------------
  * | HEADER | KEY(1)+PAGE_ID(1) | KEY(2)+PAGE_ID(2) | ... | KEY(n)+PAGE_ID(n) |
  *  --------------------------------------------------------------------------
+ *
+ *  Header format (size in byte, 32 bytes in total):
+ *  ---------------------------------------------------------------------
+ * | PageType (4) | LSN (4) | CurrentSize (4) | MaxSize (4) |
+ *  ---------------------------------------------------------------------
+ *  -----------------------------------------------
+ * | ParentPageId (4) | PageId (4) | NextPageId (4)
+ *  -----------------------------------------------
  */
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTreeInternalPage : public BPlusTreePage {

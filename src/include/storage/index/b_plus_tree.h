@@ -74,6 +74,8 @@ class BPlusTree {
   // read data from file and remove one by one
   void RemoveFromFile(const std::string &file_name, Transaction *transaction = nullptr);
 
+  auto GetSize() const -> int;
+
  private:
   void UpdateRootPageId(int insert_record = 0);
 
@@ -85,6 +87,14 @@ class BPlusTree {
   auto GetLeafPage(const KeyType &key) -> Page *;
   
   void UpdateParent(const page_id_t pid, const page_id_t p_pid);
+
+  auto BorrowFromSibling(Page *page) -> bool;
+  auto BorrowFromLeaf(LeafPage *leaf) -> bool;
+  auto BorrowFromInternal(InternalPage *inner) -> bool;
+
+  void MergeWithSibling(Page *page);
+  void MergeLeaf(LeafPage *leaf);
+  void MergeInternal(InternalPage *inner);
 
   // member variable
   std::string index_name_;
