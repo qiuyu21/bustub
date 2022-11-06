@@ -248,6 +248,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyLastFrom(const MappingType &pair, Buffe
   assert(page != nullptr);
   reinterpret_cast<BPlusTreeInternalPage *>(page->GetData())->SetParentPageId(GetPageId());
   buffer_pool_manager->UnpinPage(pid, true);
+  IncreaseSize(1);
 }
 
 /*
@@ -296,6 +297,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyFirstFrom(const MappingType &pair, Buff
   assert(page != nullptr);
   reinterpret_cast<BPlusTreeInternalPage *>(page->GetData())->SetParentPageId(GetPageId());
   buffer_pool_manager->UnpinPage(pid, true);
+  IncreaseSize(1);
 }
 
 // valuetype for internalNode should be page id_t

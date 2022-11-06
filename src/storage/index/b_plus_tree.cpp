@@ -93,7 +93,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     leaf_page = GetLeafPage(key);
     assert(leaf_page != nullptr);
   }
-  
+
   // REMEMBER to unpin after usage
   page_id_t leaf_page_id = leaf_page->GetPageId();
   LeafPage *leaf = reinterpret_cast<LeafPage *>(leaf_page->GetData());
@@ -198,6 +198,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  std::cout << "deleting:" << key << std::endl;
   if (root_page_id_ == INVALID_PAGE_ID) return;
   
   Page *leaf_page = GetLeafPage(key);
@@ -211,35 +212,40 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
 
   if (sizeBefore == sizeAfter) {
     // No key found
-    std::cout << "not found:" << key << std::endl;
     buffer_pool_manager_->UnpinPage(leaf_page_id, false);
     return;
   }
 
-  std::cout << "found:" << key << std::endl;
-
   // Found the key
   if (sizeAfter >= leaf->GetMaxSize()/2 || leaf->IsRootPage()) {
     // It is still at least half-full or the leaf is a root page
+    std::cout << "easy delete" << std::endl;
     buffer_pool_manager_->UnpinPage(leaf_page_id, true);
     return;
   }
-  
-  for (Page *page = leaf_page;;) { 
+
+  for (Page *page = leaf_page;;) {
     auto *tree_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
     auto p_pid = tree_page->GetParentPageId();
 
+
+    std::cout << "brrowing from sibling" << std::endl;
     if (BorrowFromSibling(page)) {
       // Try borrow a key&value from the sibling
+      std::cout << "brrowing succeeded" << std::endl;
       buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
       return;
     }
+
+    std::cout << "brrowing failed" << std::endl;
+    std::cout << "merging" << std::endl;
 
     // Siblings don't have a spare
     // Now merge with one of the sibling
     // After merging, the page will be destroyed by buffer_pool_manager_
     // No need to un-pin
     MergeWithSibling(page);
+
     
     // Now parent page will have one less key&value, which might violate the invariant
     Page *p_page = buffer_pool_manager_->FetchPage(p_pid);
@@ -255,6 +261,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
         // If the root page has only 1 child, the root page will be removed and the child will become the new root
         root_page_id_ = reinterpret_cast<InternalPage *>(p_page->GetData())->ValueAt(0);
         buffer_pool_manager_->DeletePage(p_pid);
+        reinterpret_cast<InternalPage *>(buffer_pool_manager_->FetchPage(root_page_id_)->GetData())->SetParentPageId(INVALID_PAGE_ID);
+        buffer_pool_manager_->UnpinPage(root_page_id_, true);
+
       } else {
         buffer_pool_manager_->UnpinPage(p_pid, false);
       }
@@ -582,6 +591,7 @@ auto BPLUSTREE_TYPE::BorrowFromLeaf(LeafPage *leaf) -> bool {
     assert(s_page != nullptr);
     auto *sibling = reinterpret_cast<LeafPage *>(s_page->GetData());
     if (sibling->GetSize() > sibling->GetMaxSize() / 2) {
+      std::cout << "Borrowing from left sibling" << std::endl;
       sibling->MoveLastToFrontOf(leaf);
       parent->SetKeyAt(i, leaf->KeyAt(0));
       success = true;
@@ -596,6 +606,7 @@ auto BPLUSTREE_TYPE::BorrowFromLeaf(LeafPage *leaf) -> bool {
     assert(s_page != nullptr);
     auto *sibling = reinterpret_cast<LeafPage *>(s_page->GetData());
     if (sibling->GetSize() > sibling->GetMaxSize() / 2) {
+      std::cout << "Borrowing from right sibling" << std::endl;
       sibling->MoveFirstToEndOf(leaf);
       parent->SetKeyAt(i+1, sibling->KeyAt(0));
       success = true;
@@ -675,7 +686,7 @@ void BPLUSTREE_TYPE::MergeLeaf(LeafPage *leaf) {
   Page *s_page = buffer_pool_manager_->FetchPage(s_pid);
   assert(s_page != nullptr);
   auto *sibling = reinterpret_cast<LeafPage *>(s_page->GetData());
-  
+
   while (leaf->GetSize()) {
     // Move all the keys to the sibling
     i > 0 ? leaf->MoveFirstToEndOf(sibling) : leaf->MoveLastToFrontOf(sibling);
@@ -683,6 +694,7 @@ void BPLUSTREE_TYPE::MergeLeaf(LeafPage *leaf) {
 
   // Remove the key/value from the parent
   parent->Remove(i);
+  buffer_pool_manager_->UnpinPage(pid, false);
   buffer_pool_manager_->DeletePage(pid);
   buffer_pool_manager_->UnpinPage(s_pid, true);
   buffer_pool_manager_->UnpinPage(p_pid, true);
@@ -701,16 +713,32 @@ void BPLUSTREE_TYPE::MergeInternal(InternalPage *inner) {
   assert(i != -1);
 
   page_id_t s_pid = i > 0 ? parent->ValueAt(i-1) : parent->ValueAt(i+1);
+  if (i > 0) {
+    s_pid = parent->ValueAt(i-1);
+  } else {
+    s_pid = parent->ValueAt(i+1);
+  }
+
+  std::cout << "sibling:" << s_pid << std::endl;
+
   Page *s_page = buffer_pool_manager_->FetchPage(s_pid);
   assert(s_page != nullptr);
   auto *sibling = reinterpret_cast<InternalPage *>(s_page->GetData());
 
+  std::cout << "size:" << sibling->GetSize() << std::endl;
+
   while(inner->GetSize()) {
-    i > 0 ? inner->MoveFirstToEndOf(sibling, parent->KeyAt(i), buffer_pool_manager_) : 
-            inner->MoveLastToFrontOf(sibling, parent->KeyAt(i+1), buffer_pool_manager_);
+    if (i > 0) {
+      inner->MoveFirstToEndOf(sibling, parent->KeyAt(i), buffer_pool_manager_);
+    } else {
+      inner->MoveLastToFrontOf(sibling, parent->KeyAt(i+1), buffer_pool_manager_);
+    }
+    // i > 0 ? inner->MoveFirstToEndOf(sibling, parent->KeyAt(i), buffer_pool_manager_) : 
+    //         inner->MoveLastToFrontOf(sibling, parent->KeyAt(i+1), buffer_pool_manager_);
   }
 
   parent->Remove(i);
+  buffer_pool_manager_->UnpinPage(pid, false);
   buffer_pool_manager_->DeletePage(pid);
   buffer_pool_manager_->UnpinPage(s_pid, true);
   buffer_pool_manager_->UnpinPage(p_pid, true);

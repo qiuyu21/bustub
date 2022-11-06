@@ -89,6 +89,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
   if (found) {
     replacer_->RecordAccess(frame_id);
     replacer_->SetEvictable(frame_id, false);
+    pages_[frame_id].pin_count_++;
     latch_.unlock();
     return &pages_[frame_id];
   }
@@ -178,7 +179,7 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
   latch_.unlock();
 }
 
-auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool { 
+auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
   latch_.lock();
   frame_id_t frame_id;
   auto found = page_table_->Find(page_id, frame_id);
@@ -192,7 +193,7 @@ auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
     latch_.unlock();
     return false;
   }
-
+  
   page_table_->Remove(p.GetPageId());
   replacer_->Remove(frame_id);
   free_list_.push_back(frame_id);
