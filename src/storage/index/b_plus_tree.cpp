@@ -284,7 +284,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
-  return INDEXITERATOR_TYPE(); 
+  return INDEXITERATOR_TYPE(&i_data_, buffer_pool_manager_, GetMinMaxLeafPageId(true));
 }
 
 /*
@@ -293,8 +293,8 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { 
-  return INDEXITERATOR_TYPE(); 
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  return INDEXITERATOR_TYPE(&i_data_, buffer_pool_manager_, GetLeafPageId(key), comparator_, key);
 }
 
 /*
@@ -303,8 +303,8 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { 
-  return INDEXITERATOR_TYPE(); 
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE {
+  return INDEXITERATOR_TYPE(&i_data_);
 }
 
 /**
@@ -744,6 +744,47 @@ void BPLUSTREE_TYPE::MergeInternal(InternalPage *inner) {
   buffer_pool_manager_->UnpinPage(p_pid, true);
 }
 
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::GetMinMaxLeafPageId(bool min) -> page_id_t {
+  if (root_page_id_ == INVALID_PAGE_ID) return INVALID_PAGE_ID;
+  page_id_t pid = root_page_id_;
+  while(1) {
+    Page *page = buffer_pool_manager_->FetchPage(pid);
+    assert(page != nullptr);
+    auto *tree_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
+    if (tree_page->IsLeafPage()) {
+      buffer_pool_manager_->UnpinPage(pid, false);
+      break;
+    }
+    auto *internal_page = reinterpret_cast<InternalPage *>(page->GetData());
+    page_id_t next_pid = min ? internal_page->ValueAt(0) : internal_page->ValueAt(internal_page->GetSize()-1);
+    buffer_pool_manager_->UnpinPage(pid, false);
+    pid = next_pid;
+  }
+  return pid;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::GetLeafPageId(const KeyType &key) -> page_id_t {
+  if (root_page_id_ == INVALID_PAGE_ID) return INVALID_PAGE_ID;
+
+  page_id_t pid = root_page_id_;
+  while(1) {
+    Page *page = buffer_pool_manager_->FetchPage(pid);
+    assert(page != nullptr);
+    auto *tree_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
+    if (tree_page->IsLeafPage()) {
+      buffer_pool_manager_->UnpinPage(pid, false);
+      break;
+    }
+    auto *internal_page = reinterpret_cast<InternalPage *>(page->GetData());
+    auto next_pid = internal_page->Lookup(key, comparator_);
+    buffer_pool_manager_->UnpinPage(pid, false);
+    pid = next_pid;
+  }
+  return pid;
+}
 
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;

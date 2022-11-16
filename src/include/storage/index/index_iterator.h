@@ -21,24 +21,40 @@ namespace bustub {
 
 INDEX_TEMPLATE_ARGUMENTS
 class IndexIterator {
- public:
-  // you may define your own constructor based on your member variables
-  IndexIterator();
-  ~IndexIterator();  // NOLINT
 
-  auto IsEnd() -> bool;
-
-  auto operator*() -> const MappingType &;
-
-  auto operator++() -> IndexIterator &;
-
-  auto operator==(const IndexIterator &itr) const -> bool { throw std::runtime_error("unimplemented"); }
-
-  auto operator!=(const IndexIterator &itr) const -> bool { throw std::runtime_error("unimplemented"); }
-
- private:
-  // add your own private member variables here
+  using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
   
+  public:
+    IndexIterator(std::list<MappingType> *lst, BufferPoolManager *buffer_pool_manager, page_id_t pid);
+
+    IndexIterator(std::list<MappingType> *lst, BufferPoolManager *buffer_pool_manager, page_id_t pid, KeyComparator &comparator, const KeyType &key);
+
+    IndexIterator(std::list<MappingType> *lst);
+
+    ~IndexIterator();  // NOLINT
+
+    auto IsEnd() -> bool;
+
+    auto operator*() -> const MappingType &;
+
+    auto operator++() -> IndexIterator &;
+
+    auto operator==(const IndexIterator &itr) const -> bool;
+
+    auto operator!=(const IndexIterator &itr) const -> bool;
+
+  private:
+    std::list<MappingType> *lst_;
+
+    BufferPoolManager *buffer_pool_manager_;
+
+    page_id_t pid_;
+
+    page_id_t next_pid_;
+
+    typename std::list<MappingType>::iterator itr_;
+
+    auto ReadPage(page_id_t pid) -> void;
 };
 
 }  // namespace bustub

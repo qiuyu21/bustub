@@ -10,7 +10,7 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
-#include <queue>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -96,6 +96,9 @@ class BPlusTree {
   void MergeLeaf(LeafPage *leaf);
   void MergeInternal(InternalPage *inner);
 
+  auto GetMinMaxLeafPageId(bool min) -> page_id_t;
+  auto GetLeafPageId(const KeyType &key) -> page_id_t;
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -104,6 +107,9 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   int size_;
+
+  // Iterator
+  std::list<MappingType> i_data_;
 };
 
 }  // namespace bustub
