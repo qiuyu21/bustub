@@ -34,6 +34,16 @@ INDEXITERATOR_TYPE::~IndexIterator() {}
 
 INDEX_TEMPLATE_ARGUMENTS
 auto INDEXITERATOR_TYPE::IsEnd() -> bool {
+    if (itr_ == lst_->end()) return true;
+
+    auto itr_cpy = itr_;
+    itr_++;
+    if (itr_ == lst_->end() && next_pid_ == INVALID_PAGE_ID) {
+        itr_ = itr_cpy;
+        return true;
+    }
+
+    itr_ = itr_cpy;
     return false;
 }
 
