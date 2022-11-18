@@ -84,7 +84,7 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
-  auto GetLeafPage(const KeyType &key) -> Page *;
+  auto GetLeafPage(Transaction *transaction, const KeyType &key) -> Page *;
   
   void UpdateParent(const page_id_t pid, const page_id_t p_pid);
 
@@ -99,6 +99,9 @@ class BPlusTree {
   auto GetMinMaxLeafPageId(bool min) -> page_id_t;
   auto GetLeafPageId(const KeyType &key) -> page_id_t;
 
+  void CheckRoot();
+  void ReleaseTLocks(Transaction *transaction);
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -107,6 +110,7 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   int size_;
+  mutable std::mutex latch_;
 
   // Iterator
   std::list<MappingType> i_data_;
