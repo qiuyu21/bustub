@@ -169,27 +169,24 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
       }
 
       UpdateParent(insert_val, root_page_id_);
-      buffer_pool_manager_->UnpinPage(new_page_id, true);
-      buffer_pool_manager_->UnpinPage(root_page_id_, true);
       root_page->WUnlatch();
       lock_queue->pop_back();
+      buffer_pool_manager_->UnpinPage(new_page_id, true);
+      buffer_pool_manager_->UnpinPage(root_page_id_, true);
       break;
     }
     
-
     Page *page = lock_queue->back();
     assert(page != nullptr);
     auto *inner = reinterpret_cast<InternalPage *>(page->GetData());
-    auto n = inner->GetSize();
-    if (n < inner->GetMaxSize()) {
+    if (inner->GetSize() < inner->GetMaxSize()) {
       inner->InsertNodeAfter(insert_after, insert_key, insert_val);
       page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
       lock_queue->pop_back();
+      buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
       break;
     }
 
-    // The internal page is full, need to split the internal page
     std::cout << "Internal node is full, creating a new internal node..." << std::endl;
     page_id_t new_page_id;
     Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
@@ -197,20 +194,31 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     auto *new_inner = reinterpret_cast<InternalPage *>(new_page->GetData());
     new_inner->Init(new_page_id, inner->GetParentPageId(), internal_max_size_);
 
-    // TODO:
     inner->MoveHalfTo(new_inner, buffer_pool_manager_);
-    
+    if (inner->ValueIndex(insert_after) != -1) {
+      inner->InsertNodeAfter(insert_after, insert_key, insert_val);
+    } else {
+      new_inner->InsertNodeAfter(insert_after, insert_key, insert_val);
+      UpdateParent(insert_val, new_page_id);
+    }
+    if (new_inner->GetSize() - inner->GetSize() > 1) {
+      inner->InsertNodeAfter(inner->ValueAt(inner->GetSize()-1), new_inner->KeyAt(0), new_inner->ValueAt(0));
+      UpdateParent(new_inner->ValueAt(0), inner->GetPageId());
+      new_inner->Remove(0);
+    }
 
     insert_key = new_inner->KeyAt(0);
     insert_val = new_page_id;
     insert_into = inner->GetParentPageId();
     insert_after = inner->GetPageId();
 
-    //
     buffer_pool_manager_->UnpinPage(new_page_id, true);
-    page->WUnlatch();
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
-    lock_queue->pop_back();
+    
+    if (insert_into != INVALID_PAGE_ID) { // Done with the internal page
+      page->WUnlatch();
+      lock_queue->pop_back();
+      buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
+    }
   }
 
   ReleaseTLocks(transaction);

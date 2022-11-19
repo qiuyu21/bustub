@@ -108,7 +108,7 @@ TEST(BPlusTreeConcurrentTest, InsertTest1) {
   auto *disk_manager = new DiskManager("test.db");
   BufferPoolManager *bpm = new BufferPoolManagerInstance(50, disk_manager);
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator, 3, 3);
   // create and fetch header_page
   page_id_t page_id;
   auto header_page = bpm->NewPage(&page_id);
@@ -119,7 +119,7 @@ TEST(BPlusTreeConcurrentTest, InsertTest1) {
   for (int64_t key = 1; key < scale_factor; key++) {
     keys.push_back(key);
   }
-  LaunchParallelTest(5, InsertHelper, &tree, keys);
+  LaunchParallelTest(100, InsertHelper, &tree, keys);
 
   tree.Print(bpm);
 
@@ -140,14 +140,13 @@ TEST(BPlusTreeConcurrentTest, InsertTest1) {
   int64_t current_key = start_key;
   index_key.SetFromInteger(start_key);
   for (auto iterator = tree.Begin(index_key); iterator != tree.End(); ++iterator) {
-    // auto location = (*iterator).second;
-    // EXPECT_EQ(location.GetPageId(), 0);
-    // EXPECT_EQ(location.GetSlotNum(), current_key);
-    // std::cout << current_key << std::endl;
+    auto location = (*iterator).second;
+    EXPECT_EQ(location.GetPageId(), 0);
+    EXPECT_EQ(location.GetSlotNum(), current_key);
     current_key = current_key + 1;
   }
 
-  // EXPECT_EQ(current_key, keys.size() + 1);
+  EXPECT_EQ(current_key, keys.size() + 1);
 
   bpm->UnpinPage(HEADER_PAGE_ID, true);
   delete disk_manager;
