@@ -99,7 +99,6 @@ class BPlusTree {
   auto GetMinMaxLeafPageId(bool min) -> page_id_t;
   auto GetLeafPageId(const KeyType &key) -> page_id_t;
 
-  void CheckRoot();
   void ReleaseTLocks(Transaction *transaction);
 
   // member variable
@@ -110,7 +109,6 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   int size_;
-  mutable std::mutex latch_;
 
   // Iterator
   std::list<MappingType> i_data_;

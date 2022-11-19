@@ -189,14 +189,10 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage *recipient) {
-  // auto n = GetSize();
-  // assert(recipient->GetSize() + n <= recipient->GetMaxSize());
-  // recipient->CopyNFrom(array_, n);
-  // recipient->SetNextPageId(GetNextPageId());
-  // recipient->SetPrevPageId(GetPrevPageId());
-  // SetNextPageId(INVALID_PAGE_ID);
-  // SetPrevPageId(INVALID_PAGE_ID);
-  // SetSize(0);
+  auto n = GetSize();
+  assert(recipient->GetSize() + n <= recipient->GetMaxSize());
+  recipient->CopyNFrom(array_, n);
+  SetSize(0);
 }
 
 /*****************************************************************************
