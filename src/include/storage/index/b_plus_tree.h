@@ -84,23 +84,23 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
-  auto GetLeafPage(Transaction *transaction, const KeyType &key, bool isInsert) -> Page *;
-  
   void UpdateParent(const page_id_t pid, const page_id_t p_pid);
 
-  auto BorrowFromSibling(Page *page) -> bool;
-  auto BorrowFromLeaf(LeafPage *leaf) -> bool;
-  auto BorrowFromInternal(InternalPage *inner) -> bool;
+  auto Borrow(Transaction *transaction) -> bool;
 
-  void MergeWithSibling(Page *page);
-  void MergeLeaf(LeafPage *leaf);
-  void MergeInternal(InternalPage *inner);
+  void Merge(Transaction *transaction);
 
-  auto GetMinMaxLeafPageId(bool min) -> page_id_t;
-  auto GetLeafPageId(const KeyType &key) -> page_id_t;
+  auto Get(const KeyType &key) -> page_id_t;
+
+  auto GetMin() -> page_id_t;
+
+  auto GetMax() -> page_id_t;
 
   void ReleaseTLocks(Transaction *transaction);
+
   auto LockInsert(Transaction *transaction, const KeyType &key) -> bool;
+
+  auto LockDelete(Transaction *transaction, const KeyType &key) -> bool;
 
   // member variable
   std::string index_name_;
