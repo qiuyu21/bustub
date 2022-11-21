@@ -17,8 +17,6 @@
 #include <mutex>  // NOLINT
 #include <unordered_map>
 #include <vector>
-#include <map>
-#include <iostream>
 
 #include "common/config.h"
 #include "common/macros.h"
@@ -39,9 +37,6 @@ namespace bustub {
 class LRUKReplacer {
  public:
   /**
-   *
-   * TODO(P1): Add implementation
-   *
    * @brief a new LRUKReplacer.
    * @param num_frames the maximum number of frames the LRUReplacer will be required to store
    */
@@ -50,15 +45,11 @@ class LRUKReplacer {
   DISALLOW_COPY_AND_MOVE(LRUKReplacer);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Destroys the LRUReplacer.
    */
   ~LRUKReplacer() = default;
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Find the frame with largest backward k-distance and evict that frame. Only frames
    * that are marked as 'evictable' are candidates for eviction.
    *
@@ -75,8 +66,6 @@ class LRUKReplacer {
   auto Evict(frame_id_t *frame_id) -> bool;
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Record the event that the given frame id is accessed at current timestamp.
    * Create a new entry for access history if frame id has not been seen before.
    *
@@ -88,8 +77,6 @@ class LRUKReplacer {
   void RecordAccess(frame_id_t frame_id);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Toggle whether a frame is evictable or non-evictable. This function also
    * controls replacer's size. Note that size is equal to number of evictable entries.
    *
@@ -107,8 +94,6 @@ class LRUKReplacer {
   void SetEvictable(frame_id_t frame_id, bool set_evictable);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Remove an evictable frame from replacer, along with its access history.
    * This function should also decrement replacer's size if removal is successful.
    *
@@ -126,77 +111,37 @@ class LRUKReplacer {
   void Remove(frame_id_t frame_id);
 
   /**
-   * TODO(P1): Add implementation
-   *
    * @brief Return replacer's size, which tracks the number of evictable frames.
    *
    * @return size_t
    */
-  inline auto Size() -> size_t { return curr_size_; }
-
+  auto Size() -> size_t;
 
   class Frame {
     public:
-
-      explicit Frame(frame_id_t, size_t);
-
-      auto inline getFrameId() const -> frame_id_t { return id_; }
-
-      auto inline getEvitable() const -> bool { return evitable_;  }
-
-      auto inline setEvitable(bool b) { evitable_ = b; }
-
-      auto inline getTimeStamps() -> std::vector<size_t> & { return timestamps_; }
-
-      auto inline getTimeStamp() -> size_t { return timestamps_.at(0); }
-
-      void addTimeStamp(size_t timestamp);
-
-      auto inline getIndex() const -> size_t { return i_; }
-
-      auto inline setIndex(size_t i) { i_ = i; }
-      
+      Frame(size_t k);
+      auto inline SetEvictable(bool evictable) { evictable_ = evictable; }
+      auto inline GetEvictable() const -> bool { return evictable_;  }
+      auto inline GetTimeStamps() -> std::vector<size_t> & { return timestamps_; }
+      auto inline GetTimeStamp() -> size_t { return timestamps_.front(); }
+      void inline ClearTimeStamps() { timestamps_.clear(); }
+      void AddTimeStamp(size_t timestamp);
     private:
-
-      frame_id_t id_;
-      bool evitable_;
-      std::vector<size_t> timestamps_;
       size_t k_;
-      size_t i_;
+      bool evictable_;
+      std::vector<size_t> timestamps_;
   };
 
-  void addTimeStamp(std::shared_ptr<Frame>, size_t);
+ private:
+  size_t current_timestamp_{0};
+  size_t curr_size_{0};
+  size_t replacer_size_;
+  size_t k_;
+  std::mutex latch_;
 
-  auto pop() -> std::shared_ptr<Frame>;
-
-  void push(frame_id_t frame_id);
-
-  //
-  void swap(bool b, size_t i, size_t j);
-
-  void up(bool b, size_t i);
-
-  void down(bool b, size_t i);
-
-  auto remove(bool b, size_t i) -> std::shared_ptr<Frame>;
-
-  auto less(bool b, size_t i, size_t j) -> bool;
-
-  private:
-    size_t current_timestamp_{0};
-    size_t curr_size_{0};       // number of evitable frames
-    size_t replacer_size_;      // maximum number of evitable frames
-    size_t k_;
-    
-    std::mutex latch_;
-
-    // std::map<frame_id_t, std::shared_ptr<Frame>> frames_;
-
-    std::vector<std::shared_ptr<Frame>> frames_;
-
-    std::vector<std::shared_ptr<Frame>> minheap_L_; // Min heap storing frames with < K references
-
-    std::vector<std::shared_ptr<Frame>> minheap_G_; // Min heap storing frames with >= K references
+  std::vector<std::shared_ptr<Frame>> frames_;
+  std::vector<frame_id_t> less_than_k_;
+  std::vector<frame_id_t> equal_to_k_;
 };
 
 }  // namespace bustub

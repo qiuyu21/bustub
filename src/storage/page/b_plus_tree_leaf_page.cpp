@@ -192,6 +192,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage *recipient) {
   auto n = GetSize();
   assert(recipient->GetSize() + n <= recipient->GetMaxSize());
   recipient->CopyNFrom(array_, n);
+  recipient->SetNextPageId(GetNextPageId());
   SetSize(0);
 }
 

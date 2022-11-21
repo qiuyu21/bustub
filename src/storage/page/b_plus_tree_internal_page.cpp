@@ -199,11 +199,10 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::RemoveAndReturnOnlyChild() -> ValueType {
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveAllTo(BPlusTreeInternalPage *recipient, const KeyType &middle_key, BufferPoolManager *buffer_pool_manager) {
-  if (IsRootPage()) {
-    recipient->CopyNFrom(array_, GetSize(), buffer_pool_manager);
-    return;
-  }
-  assert(false);
+  assert(recipient->GetSize() + GetSize() <= recipient->GetMaxSize());
+  auto n = recipient->GetSize();
+  recipient->CopyNFrom(array_, GetSize(), buffer_pool_manager);
+  recipient->SetKeyAt(n, middle_key);
 }
 
 /*****************************************************************************

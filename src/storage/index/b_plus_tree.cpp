@@ -221,9 +221,8 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
-
+  
   bool isBtreeLocked = LockDelete(transaction, key);
-
   auto *lock_queue = transaction->GetPageSet().get();
   if (!lock_queue->size()) return;  // BTree has no page
   Page *leaf_page = lock_queue->back();
@@ -233,7 +232,6 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
  
   auto sizeBefore = leaf->GetSize();
   auto sizeAfter = leaf->RemoveAndDeleteRecord(key, comparator_);
-
   if (sizeBefore == sizeAfter) {
     if (isBtreeLocked) latch_.unlock();
     ReleaseTLocks(transaction);
@@ -252,24 +250,30 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   }
 
   for (;;) {
-    if (Borrow(transaction)) break;
-
+    std::cout << "Borrowing..." << std::endl;
+    if (Borrow(transaction)) {
+      std::cout << "Borrowing succeeded." << std::endl;
+      break;
+    }
+    std::cout << "Borrowing failed. Merging..." << std::endl;
     auto bef = lock_queue->size();
     Merge(transaction);
     auto aft = lock_queue->size();
     assert(lock_queue->size() > 0 && aft == bef - 1);
 
+
     Page *parent = lock_queue->back(); // the back of lock_queue should contain the parent's page
     auto *parent_tp = reinterpret_cast<BPlusTreePage *>(parent->GetData());
     auto parent_pid = parent_tp->GetPageId();
 
-    if (parent_tp->GetSize() > parent_tp->GetMaxSize() / 2) {
+    if (parent_tp->GetSize() >= parent_tp->GetMaxSize() / 2) {
       parent->WUnlatch();
       lock_queue->pop_back();
       buffer_pool_manager_->UnpinPage(parent_pid, true);  // Since one pair of key&value was deleted during Merge(), need to flag it dirty
       break;
     } else if (parent_tp->IsRootPage()) {
-      assert(isBtreeLocked);
+      // TODO:
+      // assert(isBtreeLocked);
       if (parent_tp->GetSize() == 1) {
         root_page_id_ = reinterpret_cast<InternalPage *>(parent->GetData())->ValueAt(0);
         parent->WUnlatch();
@@ -552,6 +556,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Borrow(Transaction *transaction) -> bool {
   auto *lock_queue = transaction->GetPageSet().get();
   assert(lock_queue->size() >= 2);
+  
 
   // temporarily pop the last two pages, if the borrow failed, will push them back to the queue
   Page *child = lock_queue->back();
@@ -560,6 +565,7 @@ auto BPLUSTREE_TYPE::Borrow(Transaction *transaction) -> bool {
   lock_queue->pop_back();
   
   auto *parent_internal = reinterpret_cast<InternalPage *>(parent->GetData());
+
   auto index = parent_internal->ValueIndex(child->GetPageId());
   assert(index != -1);
   int iSib[2] = {-1, -1}; // left, right sibling index
@@ -635,9 +641,11 @@ void BPLUSTREE_TYPE::Merge(Transaction *transaction) {
   auto *sibling_tp = reinterpret_cast<BPlusTreePage *>(sibling->GetData());
 
   if (sibling_tp->IsLeafPage()) {
+    std::cout << "Merging leaf..." << std::endl;
     index > 0 ? reinterpret_cast<LeafPage *>(child->GetData())->MoveAllTo(reinterpret_cast<LeafPage *>(sibling->GetData())) :
                   reinterpret_cast<LeafPage *>(sibling->GetData())->MoveAllTo(reinterpret_cast<LeafPage *>(child->GetData()));
   } else {
+    std::cout << "Merging internal..." << std::endl;
     index > 0 ? reinterpret_cast<InternalPage *>(child->GetData())->MoveAllTo(reinterpret_cast<InternalPage *>(sibling->GetData()), parent_internal->KeyAt(index), buffer_pool_manager_) :
                   reinterpret_cast<InternalPage *>(sibling->GetData())->MoveAllTo(reinterpret_cast<InternalPage *>(child->GetData()), parent_internal->KeyAt(index+1), buffer_pool_manager_);
   }
@@ -650,9 +658,10 @@ void BPLUSTREE_TYPE::Merge(Transaction *transaction) {
     buffer_pool_manager_->UnpinPage(sibling_pid, true);
   } else {
     parent_internal->Remove(index+1);
+    child->WUnlatch();
+    buffer_pool_manager_->UnpinPage(child_pid, true);
     buffer_pool_manager_->UnpinPage(sibling_pid, false);
     buffer_pool_manager_->DeletePage(sibling_pid);
-    buffer_pool_manager_->UnpinPage(child_pid, true);
   }
 }
 
@@ -729,7 +738,6 @@ auto BPLUSTREE_TYPE::LockInsert(Transaction *transaction, const KeyType &key) ->
 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::LockDelete(Transaction *transaction, const KeyType &key) -> bool {
-
   Page *page;
   InternalPage *internal_page;
   auto *lock_queue = transaction->GetPageSet().get();
@@ -756,7 +764,13 @@ auto BPLUSTREE_TYPE::LockDelete(Transaction *transaction, const KeyType &key) ->
       ReleaseTLocks(transaction);
     }
     lock_queue->push_back(page);
-    if (internal_page->IsLeafPage()) return hold;
+    if (internal_page->IsLeafPage()) {
+      if (lock_queue->size() == 1) {
+        latch_.unlock();
+        hold = false;
+      }
+      return hold;
+    }
     pid = internal_page->Lookup(key, comparator_);
   }
 }
