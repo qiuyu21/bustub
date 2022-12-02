@@ -10,16 +10,14 @@ namespace bustub {
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::IndexIterator(std::list<MappingType> *lst, BufferPoolManager *buffer_pool_manager, page_id_t pid): lst_(lst), buffer_pool_manager_(buffer_pool_manager){
     lst->clear();
-    if (pid == INVALID_PAGE_ID) return;
-    ReadPage(pid);
+    if (pid != INVALID_PAGE_ID) ReadPage(pid);
     itr_ = lst->begin();
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::IndexIterator(std::list<MappingType> *lst, BufferPoolManager *buffer_pool_manager, page_id_t pid, KeyComparator &comparator, const KeyType &key): lst_(lst), buffer_pool_manager_(buffer_pool_manager) {
     lst->clear();
-    if (pid == INVALID_PAGE_ID) return;
-    ReadPage(pid);
+    if (pid != INVALID_PAGE_ID) ReadPage(pid);
     itr_ = lst->begin();
     for (;itr_ != lst->end(); itr_++) {
         if (comparator((*itr_).first, key) == 0) break;

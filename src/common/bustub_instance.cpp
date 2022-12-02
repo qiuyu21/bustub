@@ -336,6 +336,8 @@ auto BustubInstance::ExecuteSqlTxn(const std::string &sql, ResultWriter &writer,
     }
     writer.EndHeader();
 
+    fmt::print("Result set size: {}\n", result_set.size());
+
     // Transforming result set into strings.
     for (const auto &tuple : result_set) {
       writer.BeginRow();
