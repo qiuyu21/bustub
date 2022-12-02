@@ -35,13 +35,13 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     Tuple t;
     RID r;
     while (child_executor_.get()->Next(&t, &r)) {
-        assert(t_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction()));
-        // Insert index
-        auto idx_info = exec_ctx_->GetCatalog()->GetTableIndexes(t_info_->name_);
-        for (auto itr = idx_info.begin(); itr != idx_info.end(); itr++) {
-            (*itr)->index_->InsertEntry(t, r, exec_ctx_->GetTransaction());
+        if (t_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction())) {
+            auto idx_info = exec_ctx_->GetCatalog()->GetTableIndexes(t_info_->name_);
+            for (auto itr = idx_info.begin(); itr != idx_info.end(); itr++) {
+                (*itr)->index_->InsertEntry(t, r, exec_ctx_->GetTransaction());
+            }
+            n++;
         }
-        n++;
     }
     
     Value v = Value(TypeId::INTEGER, n);
