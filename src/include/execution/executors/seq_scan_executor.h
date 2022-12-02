@@ -53,6 +53,6 @@ class SeqScanExecutor : public AbstractExecutor {
 
   std::unique_ptr<TableIterator> itr_ptr_;
 
-  
+  TableInfo *t_info_;
 };
 }  // namespace bustub
