@@ -64,20 +64,33 @@ class SimpleAggregationHashTable {
   }
 
   /**
-   * TODO(Student)
-   *
    * Combines the input into the aggregation result.
    * @param[out] result The output aggregate value
    * @param input The input value
    */
   void CombineAggregateValues(AggregateValue *result, const AggregateValue &input) {
     for (uint32_t i = 0; i < agg_exprs_.size(); i++) {
+      Value cur = result->aggregates_.at(i);
+      if (input.aggregates_.at(i).IsNull()) continue;
       switch (agg_types_[i]) {
         case AggregationType::CountStarAggregate:
+          result->aggregates_.at(i) = result->aggregates_.at(i).Add(input.aggregates_.at(i));
+          break;
         case AggregationType::CountAggregate:
+          cur.IsNull() ? result->aggregates_.at(i) = ValueFactory::GetIntegerValue(1)
+                        : result->aggregates_.at(i) = result->aggregates_.at(i).Add(ValueFactory::GetIntegerValue(1));
+          break;                          
         case AggregationType::SumAggregate:
+          cur.IsNull() ? result->aggregates_.at(i) = input.aggregates_.at(i)
+                        : result->aggregates_.at(i) = result->aggregates_.at(i).Add(input.aggregates_.at(i));
+          break;                        
         case AggregationType::MinAggregate:
+          cur.IsNull() ? result->aggregates_.at(i) = input.aggregates_.at(i)
+                        : result->aggregates_.at(i) = result->aggregates_.at(i).Min(input.aggregates_.at(i));
+          break;                        
         case AggregationType::MaxAggregate:
+          cur.IsNull() ? result->aggregates_.at(i) = input.aggregates_.at(i)
+              : result->aggregates_.at(i) = result->aggregates_.at(i).Max(input.aggregates_.at(i));
           break;
       }
     }
@@ -174,7 +187,7 @@ class AggregationExecutor : public AbstractExecutor {
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); };
 
   /** Do not use or remove this function, otherwise you will get zero points. */
-  auto GetChildExecutor() const -> const AbstractExecutor *;
+  auto GetChildExecutor() const -> const AbstractExecutor * { return child_.get();}
 
  private:
   /** @return The tuple as an AggregateKey */
@@ -195,14 +208,16 @@ class AggregationExecutor : public AbstractExecutor {
     return {vals};
   }
 
- private:
   /** The aggregation plan node */
   const AggregationPlanNode *plan_;
   /** The child executor that produces tuples over which the aggregation is computed */
   std::unique_ptr<AbstractExecutor> child_;
+
   /** Simple aggregation hash table */
-  // TODO(Student): Uncomment SimpleAggregationHashTable aht_;
+  SimpleAggregationHashTable aht_;
+
   /** Simple aggregation hash table iterator */
-  // TODO(Student): Uncomment SimpleAggregationHashTable::Iterator aht_iterator_;
+  SimpleAggregationHashTable::Iterator aht_iterator_;
+
 };
 }  // namespace bustub
