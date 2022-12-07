@@ -7,45 +7,46 @@ SortExecutor::SortExecutor(ExecutorContext *exec_ctx, const SortPlanNode *plan, 
 {
 }
 
+auto SortExecutor::GetComparator(int i) {
+    return [&, i](Tuple t1, Tuple t2) -> bool {
+        auto order_by = plan_->GetOrderBy().at(i);
+        assert(order_by.first != OrderByType::INVALID);
+        Value v1 = order_by.second.get()->Evaluate(&t1, GetOutputSchema());
+        Value v2 = order_by.second.get()->Evaluate(&t2, GetOutputSchema());
+        if (order_by.first == OrderByType::DEFAULT || order_by.first == OrderByType::ASC) {
+            return v1.CompareLessThan(v2) == CmpBool::CmpTrue;
+        } else {
+            return v1.CompareGreaterThan(v2) == CmpBool::CmpTrue;
+        }
+    };
+}
+
 void SortExecutor::Init() {
     tuples_.clear();
     i_ = 0;
     child_executor_.get()->Init();
     Tuple t;
     RID r;
-    
     while (child_executor_.get()->Next(&t, &r)) tuples_.push_back(t);
-
     auto &order_bys = plan_->GetOrderBy();
-
     for (size_t j = 0; j < order_bys.size(); j++) {
-        auto pair = order_bys.at(j);
-        assert(pair.first != OrderByType::INVALID);
-        auto sort = [&](Tuple t1, Tuple t2) -> bool {
-            Value v1 = pair.second.get()->Evaluate(&t1, GetOutputSchema());
-            Value v2 = pair.second.get()->Evaluate(&t2, GetOutputSchema());
-            if (pair.first == OrderByType::DEFAULT || pair.first == OrderByType::ASC) {
-                return v1.CompareLessThan(v2) == CmpBool::CmpTrue;
-            } else {
-                return v1.CompareGreaterThan(v2) == CmpBool::CmpTrue;
-            }
-        };
+        auto cmp = GetComparator(j);
         if (j == 0) {
-            std::sort(tuples_.begin(), tuples_.end(), sort);
-            continue;
-        }
-        auto cur = tuples_.begin();
-        while(cur != tuples_.end()) {
-            auto next = cur+1;
-            while (next != tuples_.end()) {
-                auto prev = order_bys.at(j-1);
-                Value v1 = prev.second.get()->Evaluate(&(*cur), GetOutputSchema());
-                Value v2 = prev.second.get()->Evaluate(&(*next), GetOutputSchema());
-                if (v1.CompareNotEquals(v2) == CmpBool::CmpTrue) break;
-                next++;
+            std::sort(tuples_.begin(), tuples_.end(), cmp);
+        } else {
+            auto cur = tuples_.begin();
+            while(cur != tuples_.end()) {
+                auto next = cur+1;
+                while (next != tuples_.end()) {
+                    auto prev = order_bys.at(j-1);
+                    Value v1 = prev.second.get()->Evaluate(&(*cur), GetOutputSchema());
+                    Value v2 = prev.second.get()->Evaluate(&(*next), GetOutputSchema());
+                    if (v1.CompareNotEquals(v2) == CmpBool::CmpTrue) break;
+                    next++;
+                }
+                std::sort(cur, next, cmp);
+                cur = next;
             }
-            std::sort(cur, next, sort);
-            cur = next;
         }
     }
 }

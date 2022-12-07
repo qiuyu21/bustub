@@ -49,6 +49,8 @@ class SortExecutor : public AbstractExecutor {
   /** @return The output schema for the sort */
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); }
 
+  auto GetComparator(int i);
+
  private:
   /** The sort plan node to be executed */
   const SortPlanNode *plan_;
