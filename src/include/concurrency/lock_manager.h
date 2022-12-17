@@ -298,7 +298,6 @@ class LockManager {
   auto RunCycleDetection() -> void;
 
  private:
-  /** Fall 2022 */
   /** Structure that holds lock requests for a given table oid */
   std::unordered_map<table_oid_t, std::shared_ptr<LockRequestQueue>> table_lock_map_;
   /** Coordination */
@@ -314,6 +313,101 @@ class LockManager {
   /** Waits-for graph representation. */
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
   std::mutex waits_for_latch_;
+
+
+  /**
+   * Checks if the transaction's isolation level and the lock mode for the requested lock is valid
+   * @param txn the transaction requesting the lock upgrade
+   * @param lock_mode the lock mode for the requested lock.
+   * @return If invalid, TransactionState will be set ABORTED and throw a TransactionAbortException
+   */
+  void IsValidLockMode(Transaction *txn, LockMode lock_mode, bool isRow);
+
+  /**
+   * Checks if lock upgrade is valid
+   * @param from the original mode for the lock
+   * @param to the proposed mode for the lock
+   * @return true if valid, false otherwise
+   */
+  auto IsValidUpgrade(LockMode from, LockMode to) -> bool;
+
+  /**
+   * Checks if two lock modes are compatible.
+   * @param a lockmode a
+   * @param b lockmode b
+   * @return true if compatible, false otherwise
+   */
+  auto IsCompatible(LockMode a, LockMode b) -> bool;
+
+  /**
+   * 
+   * @param lrq
+   * @param txn
+   * @param lock_mode
+   * 
+   */
+  auto IsBlocking(LockRequestQueue *lrq, Transaction *txn, LockMode lock_mode) -> bool;
+
+  /**
+   * 
+   * @param txn
+   * @param lock_mode
+   * 
+   */
+  auto GetTableLockSet(Transaction *txn, LockMode lock_mode) -> std::unordered_set<table_oid_t> *;
+
+
+  /**
+   * 
+   * @param txn
+   * @param lock_mode
+   * 
+   */
+  auto GetRowLockSet(Transaction *txn, LockMode lock_mode) -> std::unordered_map<table_oid_t, std::unordered_set<RID>> *;
+
+
+  /**
+   * 
+   * @param txn
+   * @param lock_mode
+   * 
+   */
+  void UpdateTransactionStateOnUnlock(Transaction *txn, LockMode lock_mode);
+
+
+  /**
+   * 
+   * @param txn
+   * @param oid
+   * 
+   */
+  auto IsTableRowLocked(Transaction *txn, const table_oid_t &oid) -> bool;
+
+
+  /**
+   * 
+   * @param oid
+   * 
+   */
+  auto IsTableExist(const table_oid_t &oid) -> bool;
+
+
+  /**
+   * 
+   * @param rid
+   * 
+   */
+  auto IsRIDExist(const RID &rid) -> bool;
+
+
+  /**
+   * 
+   * @param txn
+   * @param oid
+   * @param lock_mode
+   * 
+   */
+  auto IsValidRowLock(Transaction *txn, const table_oid_t &oid, const LockMode lock_mode) -> bool;
 };
 
 }  // namespace bustub
