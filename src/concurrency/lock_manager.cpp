@@ -15,6 +15,8 @@
 #include "common/config.h"
 #include "concurrency/transaction.h"
 #include "concurrency/transaction_manager.h"
+#include <functional>
+#include <algorithm>
 
 namespace bustub {
 
@@ -57,22 +59,36 @@ auto LockManager::LockTable(Transaction *txn, LockMode lock_mode, const table_oi
     }
   }
 
+  std::vector<txn_id_t> v_blocked_prev;
+
   while(1) {
+    std::vector<txn_id_t> v_blocked_cur;
     if (lrq->upgrading_ != INVALID_TXN_ID) {   // Prioritize upgrading transaction
       if (lrq->upgrading_ == txn->GetTransactionId()) {
-        if (!IsBlocking(lrq, txn, lock_mode)) {
+        if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
           GetTableLockSet(txn, lr->lock_mode_)->erase(oid);
           lr->lock_mode_ = lock_mode;          
           lrq->upgrading_ = INVALID_TXN_ID;
           break;
+        } else {
+          for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+          for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+          v_blocked_prev = v_blocked_cur;
         }
       }
     } else {
-      if (!IsBlocking(lrq, txn, lock_mode)) break;
+      if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+        break;
+      } else {
+        for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+        for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+        v_blocked_prev = v_blocked_cur;
+      }
     }
     lrq->cv_.wait(lock);
   }
 
+  for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
   GetTableLockSet(txn, lock_mode)->emplace(oid);
   lr->granted_ = true;
   lock.unlock();
@@ -167,22 +183,36 @@ auto LockManager::LockRow(Transaction *txn, LockMode lock_mode, const table_oid_
     }
   }
 
+  std::vector<txn_id_t> v_blocked_prev;
+
   while(1) {
+    std::vector<txn_id_t> v_blocked_cur;
     if (lrq->upgrading_ != INVALID_TXN_ID) {  // Prioritize upgrading transaction
       if (lrq->upgrading_ == txn->GetTransactionId()) {
-        if (!IsBlocking(lrq, txn, lock_mode)) {
+        if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
           GetRowLockSet(txn, lr->lock_mode_)->at(oid).erase(rid);
           lr->lock_mode_ = lock_mode;          
           lrq->upgrading_ = INVALID_TXN_ID;
           break;
+        } else {
+          for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+          for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+          v_blocked_prev = v_blocked_cur;
         }
       }
     } else {
-      if (!IsBlocking(lrq, txn, lock_mode)) break;
+      if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+        break;
+      } else {
+        for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+        for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+        v_blocked_prev = v_blocked_cur;
+      }
     }
     lrq->cv_.wait(lock);
   }
 
+  for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
   auto *oid2set = GetRowLockSet(txn, lock_mode);
   if (oid2set->find(oid) == oid2set->end()) oid2set->emplace(oid, std::unordered_set<RID>());
   oid2set->at(oid).emplace(rid);
@@ -229,21 +259,114 @@ auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID 
   return true;
 }
 
-void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {}
+void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
+  std::scoped_lock<std::mutex> lock(waits_for_latch_);
+  if (waits_for_.find(t1) == waits_for_.end())
+    waits_for_.emplace(t1, std::vector<txn_id_t>());
+  auto &vec = waits_for_.at(t1);
+  if (std::find(vec.begin(), vec.end(), t2) == vec.end())
+    vec.emplace_back(t2);
+}
 
-void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {}
+void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
+  std::scoped_lock<std::mutex> lock(waits_for_latch_);
+  auto &vec = waits_for_.at(t1);
+  auto itr = std::find(vec.begin(), vec.end(), t2);
+  if (itr != vec.end()) vec.erase(itr);
+}
 
-auto LockManager::HasCycle(txn_id_t *txn_id) -> bool { return false; }
+auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
+  auto res = Tarjan();
+  *txn_id = -1;
+  for (auto &vec : res) {
+    if (vec.size() > 1) {
+      std::sort(vec.begin(), vec.end());
+      *txn_id = *txn_id == -1 ? vec.front() : std::min(*txn_id, vec.front());
+    }
+  }
+  return *txn_id != -1;
+}
+
+auto LockManager::Tarjan() -> std::vector<std::vector<txn_id_t>> {
+  std::scoped_lock<std::mutex> lock(waits_for_latch_);
+  std::vector<std::vector<txn_id_t>> res;
+  std::unordered_map<txn_id_t, int> vst;
+  std::unordered_map<txn_id_t, bool> ist;
+  std::list<txn_id_t> stk;
+  int time = 0;
+
+  std::function<int(txn_id_t)> f = [&](txn_id_t t_id) {
+    if (vst.find(t_id) != vst.end()) return vst.at(t_id);
+    auto t = time;
+    vst.emplace(t_id, t);
+    time++;
+
+    auto mt = t;
+    stk.emplace_back(t_id);
+    ist.emplace(t_id, true);
+
+    if (waits_for_.find(t_id) != waits_for_.end()) {
+      auto &neighbors = waits_for_.at(t_id);
+      for (auto &neighbor : neighbors) {
+        if (vst.find(neighbor) == vst.end()) {
+            auto res = f(neighbor);
+            if (res < mt) mt = res;
+        } else if (ist.find(neighbor) != ist.end() && ist.at(neighbor)) {
+          if (vst.at(neighbor) < mt) mt = vst.at(neighbor);
+        }
+      }
+    }
+
+    if (mt == t) {
+      std::vector<txn_id_t> vec;
+      while(1) {
+        auto id = stk.back();
+        vec.emplace_back(id);
+        stk.pop_back();
+        ist.at(id) = false;
+        if (id == t_id) break;
+      }
+      res.emplace_back(vec);
+    }
+
+    return mt;
+  };
+
+  std::vector<txn_id_t> txn_ids;
+  for (auto &pair : waits_for_) txn_ids.emplace_back(pair.first);
+  std::sort(txn_ids.begin(), txn_ids.end());
+
+  for (auto &id : txn_ids) f(id);
+  return res;
+}
 
 auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
+  std::scoped_lock<std::mutex> lock(waits_for_latch_);
   std::vector<std::pair<txn_id_t, txn_id_t>> edges(0);
+  std::unordered_map<txn_id_t, bool> vst;
+  for (auto &pair : waits_for_) vst.emplace(pair.first, false);
+  
+  std::function<void(txn_id_t)> f = [&](txn_id_t t_id) {
+    if (vst.find(t_id) == vst.end() || vst.at(t_id)) return;
+    vst.at(t_id) = true;
+    auto &neighbors = waits_for_.at(t_id);
+    for (auto &neighbor : neighbors) {
+      edges.emplace_back(std::make_pair(t_id, neighbor));
+      f(neighbor);
+    }
+  };
+  for (auto &pair : vst) f(pair.first);
+
   return edges;
 }
 
 void LockManager::RunCycleDetection() {
   while (enable_cycle_detection_) {
     std::this_thread::sleep_for(cycle_detection_interval);
-    {  // TODO(students): detect deadlock
+    txn_id_t tid;
+    if (HasCycle(&tid)) {
+      fmt::print("Cycle detected...\n");
+      fmt::print("Aborting transaction {}...\n", tid);
     }
   }
 }
@@ -323,16 +446,18 @@ auto LockManager::IsCompatible(LockMode a, LockMode b) -> bool {
   return true;
 }
 
-auto LockManager::IsBlocking(LockRequestQueue *lrq, Transaction *txn, LockMode lock_mode) -> bool {
+auto LockManager::IsBlocking(LockRequestQueue *lrq, Transaction *txn, LockMode lock_mode, std::vector<txn_id_t> &blocking_txns) -> bool {
   if (lrq->upgrading_ != INVALID_PAGE_ID && lrq->upgrading_ != txn->GetTransactionId()) return true;
   auto &queue = lrq->request_queue_;
   for (auto itr = queue.begin(); itr != queue.end(); itr++) {
     LockRequest *lr = (*itr);
     if (lr->granted_ && lr->txn_id_ != txn->GetTransactionId()) {
-      if (!IsCompatible(lr->lock_mode_, lock_mode)) return true;
+      if (!IsCompatible(lr->lock_mode_, lock_mode)) {
+        blocking_txns.emplace_back(lr->txn_id_);
+      }
     }
   }
-  return false;
+  return blocking_txns.size() > 0;
 }
 
 auto LockManager::GetTableLockSet(Transaction *txn, LockMode lock_mode) -> std::unordered_set<table_oid_t> * {

@@ -30,6 +30,7 @@ namespace bustub {
 
 class TransactionManager;
 
+
 /**
  * LockManager handles transactions asking for locks on records.
  */
@@ -314,7 +315,6 @@ class LockManager {
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
   std::mutex waits_for_latch_;
 
-
   /**
    * Checks if the transaction's isolation level and the lock mode for the requested lock is valid
    * @param txn the transaction requesting the lock upgrade
@@ -346,7 +346,7 @@ class LockManager {
    * @param lock_mode
    * 
    */
-  auto IsBlocking(LockRequestQueue *lrq, Transaction *txn, LockMode lock_mode) -> bool;
+  auto IsBlocking(LockRequestQueue *lrq, Transaction *txn, LockMode lock_mode, std::vector<txn_id_t> &blocking_txns) -> bool;
 
   /**
    * 
@@ -408,6 +408,12 @@ class LockManager {
    * 
    */
   auto IsValidRowLock(Transaction *txn, const table_oid_t &oid, const LockMode lock_mode) -> bool;
+
+
+  /**
+   * 
+   */
+  auto Tarjan() -> std::vector<std::vector<txn_id_t>>;
 };
 
 }  // namespace bustub
