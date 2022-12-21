@@ -80,6 +80,7 @@ class LockManager {
   LockManager() {
     enable_cycle_detection_ = true;
     cycle_detection_thread_ = new std::thread(&LockManager::RunCycleDetection, this);
+    terminate_tid_ = INVALID_TXN_ID;
   }
 
   ~LockManager() {
@@ -313,7 +314,10 @@ class LockManager {
   std::thread *cycle_detection_thread_;
   /** Waits-for graph representation. */
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
+  std::condition_variable waits_for_cv_;
   std::mutex waits_for_latch_;
+  txn_id_t terminate_tid_;
+
 
   /**
    * Checks if the transaction's isolation level and the lock mode for the requested lock is valid
@@ -414,6 +418,7 @@ class LockManager {
    * 
    */
   auto Tarjan() -> std::vector<std::vector<txn_id_t>>;
+
 };
 
 }  // namespace bustub

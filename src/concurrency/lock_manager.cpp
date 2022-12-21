@@ -60,39 +60,73 @@ auto LockManager::LockTable(Transaction *txn, LockMode lock_mode, const table_oi
   }
 
   std::vector<txn_id_t> v_blocked_prev;
+  bool disabled_deadlock = false;
+  bool disabled_grant = false;
 
-  while(1) {
-    std::vector<txn_id_t> v_blocked_cur;
-    if (lrq->upgrading_ != INVALID_TXN_ID) {   // Prioritize upgrading transaction
-      if (lrq->upgrading_ == txn->GetTransactionId()) {
-        if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
-          GetTableLockSet(txn, lr->lock_mode_)->erase(oid);
-          lr->lock_mode_ = lock_mode;          
-          lrq->upgrading_ = INVALID_TXN_ID;
+  std::thread t0([&]{ // Thread 0 waits for lock to be granted
+    do {
+      std::vector<txn_id_t> v_blocked_cur;
+      if (lrq->upgrading_ != INVALID_TXN_ID) {   // Prioritize upgrading transaction
+        if (lrq->upgrading_ == txn->GetTransactionId()) {
+          if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+            GetTableLockSet(txn, lr->lock_mode_)->erase(oid);
+            lr->lock_mode_ = lock_mode;          
+            lrq->upgrading_ = INVALID_TXN_ID;
+            break;
+          }
+        }
+      } else if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+        break;
+      }
+      waits_for_latch_.lock();
+      for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+      for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+      v_blocked_prev = v_blocked_cur;
+      waits_for_latch_.unlock();
+      lrq->cv_.wait(lock);
+    } while(!disabled_grant);
+
+    waits_for_latch_.lock();
+    for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+    if (disabled_grant) terminate_tid_ = INVALID_TXN_ID;
+    waits_for_latch_.unlock();
+
+    if (disabled_grant) {
+      txn->SetState(TransactionState::ABORTED);
+      for (auto req_itr = queue.begin(); req_itr != queue.end(); req_itr++) {
+        if ((*req_itr)->txn_id_ == txn->GetTransactionId()) {
+          queue.erase(req_itr);
           break;
-        } else {
-          for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-          for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
-          v_blocked_prev = v_blocked_cur;
         }
       }
     } else {
-      if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
-        break;
-      } else {
-        for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-        for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
-        v_blocked_prev = v_blocked_cur;
-      }
+      GetTableLockSet(txn, lock_mode)->emplace(oid);
+      lr->granted_ = true;
+      disabled_deadlock = true;
     }
-    lrq->cv_.wait(lock);
-  }
 
-  for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-  GetTableLockSet(txn, lock_mode)->emplace(oid);
-  lr->granted_ = true;
-  lock.unlock();
-  return true;
+    lock.unlock();
+  });
+
+  std::thread t1([&] {  // Thread 1 waits for deadlock detection thread
+    std::unique_lock<std::mutex> wait_for_lock(waits_for_latch_);
+    do {
+      if (terminate_tid_ == txn->GetTransactionId()) {
+        lrq->latch_.lock();
+        disabled_grant = true;
+        lrq->cv_.notify_all();
+        lrq->latch_.unlock();
+        break;
+      }
+      waits_for_cv_.wait_for(wait_for_lock, std::chrono::milliseconds(2));
+    } while(!disabled_deadlock);
+    wait_for_lock.unlock();
+  });
+
+  t0.join();
+  t1.join();
+
+  return !disabled_grant;
 }
 
 auto LockManager::UnlockTable(Transaction *txn, const table_oid_t &oid) -> bool {
@@ -133,7 +167,7 @@ auto LockManager::UnlockTable(Transaction *txn, const table_oid_t &oid) -> bool 
     }
   }
 
-  lrq->cv_.notify_one();
+  lrq->cv_.notify_all();
   lrq->latch_.unlock();
   return true;
 }
@@ -184,41 +218,74 @@ auto LockManager::LockRow(Transaction *txn, LockMode lock_mode, const table_oid_
   }
 
   std::vector<txn_id_t> v_blocked_prev;
+  bool disabled_deadlock = false;
+  bool disabled_grant = false;
 
-  while(1) {
-    std::vector<txn_id_t> v_blocked_cur;
-    if (lrq->upgrading_ != INVALID_TXN_ID) {  // Prioritize upgrading transaction
-      if (lrq->upgrading_ == txn->GetTransactionId()) {
-        if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
-          GetRowLockSet(txn, lr->lock_mode_)->at(oid).erase(rid);
-          lr->lock_mode_ = lock_mode;          
-          lrq->upgrading_ = INVALID_TXN_ID;
+  std::thread t0([&]{
+    do {
+      std::vector<txn_id_t> v_blocked_cur;
+      if (lrq->upgrading_ != INVALID_TXN_ID) {  // Prioritize upgrading transaction
+        if (lrq->upgrading_ == txn->GetTransactionId()) {
+          if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+            GetRowLockSet(txn, lr->lock_mode_)->at(oid).erase(rid);
+            lr->lock_mode_ = lock_mode;          
+            lrq->upgrading_ = INVALID_TXN_ID;
+            break;
+          }
+        }
+      } else if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
+        break;
+      }
+      waits_for_latch_.lock();
+      for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+      for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
+      v_blocked_prev = v_blocked_cur;
+      waits_for_latch_.unlock();
+      lrq->cv_.wait(lock);
+    } while(!disabled_grant);
+
+    waits_for_latch_.lock();
+    for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
+    if (disabled_grant) terminate_tid_ = INVALID_TXN_ID;
+    waits_for_latch_.unlock();
+
+    if (disabled_grant) {
+      txn->SetState(TransactionState::ABORTED);
+      for (auto req_itr = queue.begin(); req_itr != queue.end(); req_itr++) {
+        if ((*req_itr)->txn_id_ == txn->GetTransactionId()) {
+          queue.erase(req_itr);
           break;
-        } else {
-          for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-          for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
-          v_blocked_prev = v_blocked_cur;
         }
       }
     } else {
-      if (!IsBlocking(lrq, txn, lock_mode, v_blocked_cur)) {
-        break;
-      } else {
-        for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-        for (auto &id : v_blocked_cur) AddEdge(txn->GetTransactionId(), id);
-        v_blocked_prev = v_blocked_cur;
-      }
+      auto *oid2set = GetRowLockSet(txn, lock_mode);
+      if (oid2set->find(oid) == oid2set->end()) oid2set->emplace(oid, std::unordered_set<RID>());
+      oid2set->at(oid).emplace(rid);
+      lr->granted_ = true;
+      disabled_deadlock = true;
     }
-    lrq->cv_.wait(lock);
-  }
+    lock.unlock();
+  });
 
-  for (auto &id : v_blocked_prev) RemoveEdge(txn->GetTransactionId(), id);
-  auto *oid2set = GetRowLockSet(txn, lock_mode);
-  if (oid2set->find(oid) == oid2set->end()) oid2set->emplace(oid, std::unordered_set<RID>());
-  oid2set->at(oid).emplace(rid);
-  lr->granted_ = true;
-  lock.unlock();
-  return true;
+  std::thread t1([&] {  // Thread 1 waits for deadlock detection thread
+    std::unique_lock<std::mutex> wait_for_lock(waits_for_latch_);
+    do {
+      if (terminate_tid_ == txn->GetTransactionId()) {
+        disabled_grant = true;
+        lrq->latch_.lock();
+        lrq->cv_.notify_all();
+        lrq->latch_.unlock();
+        break;
+      }
+      waits_for_cv_.wait_for(wait_for_lock, std::chrono::milliseconds(2));
+    } while(!disabled_deadlock);
+    wait_for_lock.unlock();
+  });
+
+  t0.join();
+  t1.join();
+
+  return !disabled_grant;
 }
 
 auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID &rid) -> bool {
@@ -254,13 +321,12 @@ auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID 
     }
   }
 
-  lrq->cv_.notify_one();
+  lrq->cv_.notify_all();
   lrq->latch_.unlock();
   return true;
 }
 
 void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
-  std::scoped_lock<std::mutex> lock(waits_for_latch_);
   if (waits_for_.find(t1) == waits_for_.end())
     waits_for_.emplace(t1, std::vector<txn_id_t>());
   auto &vec = waits_for_.at(t1);
@@ -269,7 +335,6 @@ void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
 }
 
 void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
-  std::scoped_lock<std::mutex> lock(waits_for_latch_);
   auto &vec = waits_for_.at(t1);
   auto itr = std::find(vec.begin(), vec.end(), t2);
   if (itr != vec.end()) vec.erase(itr);
@@ -281,14 +346,13 @@ auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
   for (auto &vec : res) {
     if (vec.size() > 1) {
       std::sort(vec.begin(), vec.end());
-      *txn_id = *txn_id == -1 ? vec.front() : std::min(*txn_id, vec.front());
+      *txn_id = *txn_id == -1 ? vec.back() : std::max(*txn_id, vec.back());
     }
   }
   return *txn_id != -1;
 }
 
 auto LockManager::Tarjan() -> std::vector<std::vector<txn_id_t>> {
-  std::scoped_lock<std::mutex> lock(waits_for_latch_);
   std::vector<std::vector<txn_id_t>> res;
   std::unordered_map<txn_id_t, int> vst;
   std::unordered_map<txn_id_t, bool> ist;
@@ -363,10 +427,14 @@ auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
 void LockManager::RunCycleDetection() {
   while (enable_cycle_detection_) {
     std::this_thread::sleep_for(cycle_detection_interval);
+    std::scoped_lock<std::mutex> lock(waits_for_latch_);
+    if (terminate_tid_ != INVALID_TXN_ID) continue;
     txn_id_t tid;
     if (HasCycle(&tid)) {
       fmt::print("Cycle detected...\n");
       fmt::print("Aborting transaction {}...\n", tid);
+      terminate_tid_ = tid;
+      waits_for_cv_.notify_all();
     }
   }
 }
